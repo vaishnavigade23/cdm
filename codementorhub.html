@@ -1,0 +1,675 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CodeMentor Hub Pro</title>
+    <!-- Load Inter font -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Configure Tailwind to use the Inter font family and custom colors -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        'primary-purple': '#6366f1', // Indigo 500
+                        'secondary-purple': '#8b5cf6', // Violet 500
+                        'success-green': '#10b981', // Emerald 500
+                        'danger-red': '#ef4444', // Red 500
+                        'mentor-pink': '#ec4899', // Pink 500
+                        'mentor-yellow': '#facc15', // Amber 400
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Custom Styles for Tooltip -->
+    <style>
+        .tooltip-container:hover .tooltip-content {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0);
+        }
+        .tooltip-content {
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s, visibility 0.3s, transform 0.3s;
+            transform: translateY(4px);
+        }
+    </style>
+    <!-- Firebase Imports for Authentication and Database -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc, collection, query, onSnapshot, updateDoc, deleteDoc, addDoc, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
+        // Log all Firebase logs to the console for debugging
+        setLogLevel('Debug');
+
+        // Global variables for Firebase access
+        window.firebaseApp = null;
+        window.db = null;
+        window.auth = null;
+        window.userId = null;
+        
+        const initFirebase = async () => {
+            try {
+                // IMPORTANT: These global variables are provided by the Canvas environment
+                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                const firebaseConfig = typeof _firebase_config !== 'undefined' ? JSON.parse(_firebase_config) : null;
+                const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+                if (firebaseConfig) {
+                    window.firebaseApp = initializeApp(firebaseConfig);
+                    window.db = getFirestore(window.firebaseApp);
+                    window.auth = getAuth(window.firebaseApp);
+
+                    // Sign in using the custom token or anonymously if no token is available
+                    if (initialAuthToken) {
+                        await signInWithCustomToken(window.auth, initialAuthToken);
+                        console.log("Firebase signed in with custom token.");
+                    } else {
+                        await signInAnonymously(window.auth);
+                        console.log("Firebase signed in anonymously.");
+                    }
+
+                    onAuthStateChanged(window.auth, (user) => {
+                        if (user) {
+                            window.userId = user.uid;
+                            console.log("User authenticated. UID:", window.userId);
+                        } else {
+                            // If sign-in fails or user logs out, generate a random ID for unauthenticated users (for public data)
+                            window.userId = crypto.randomUUID();
+                            console.log("No user authenticated. Using anonymous ID:", window.userId);
+                        }
+                        
+                        // Display User ID on the Teams page (Mandatory for multi-user apps)
+                        const userIdDisplay = document.getElementById('current-user-id');
+                        if (userIdDisplay) {
+                            userIdDisplay.textContent = `Your ID: ${window.userId}`;
+                        }
+                        // After auth is ready, run the main app logic
+                        window.initializeAppLogic(); 
+                    });
+
+                } else {
+                    console.error("Firebase config is missing. Data storage will not work.");
+                    // Run app logic even without Firebase if config is missing
+                    window.initializeAppLogic(); 
+                }
+            } catch (error) {
+                console.error("Error initializing Firebase:", error);
+                window.initializeAppLogic(); 
+            }
+        };
+
+        // Initialize Firebase when the script loads
+        initFirebase();
+    </script>
+</head>
+<body class="bg-gray-900 font-sans min-h-screen flex flex-col">
+
+    <!-- Notification Modal/Toast Container -->
+    <div id="notification-container" class="fixed top-5 right-5 z-50 space-y-2">
+        <!-- Notifications will be inserted here -->
+    </div>
+
+    <!-- Header Section (Updated with Gradient Text) -->
+    <header class="bg-gray-800 text-white py-12 px-6 text-center shadow-2xl">
+        <!-- Applying Gradient for attractive look -->
+        <h1 class="text-4xl md:text-6xl font-extrabold tracking-tight" 
+            style="background-image: linear-gradient(to right, #6366f1, #ec4899, #8b5cf6); 
+                   -webkit-background-clip: text; 
+                   -webkit-text-fill-color: transparent; 
+                   text-shadow: 0 0 10px rgba(99, 102, 241, 0.4);">
+            CodeMentor Hub
+        </h1>
+        <p class="mt-2 text-xl font-light opacity-90">Share. Learn. Grow. Together.</p>
+    </header>
+    
+    <!-- Navigation (Sticky) -->
+    <nav class="sticky top-0 z-40 bg-gray-800 shadow-md">
+        <ul id="nav-menu" class="flex flex-wrap justify-center p-4 text-gray-300 font-medium">
+            <li><a href="#home" class="nav-link px-4 py-2 mx-2 rounded-lg transition-colors duration-200 hover:bg-primary-purple hover:text-white">Home</a></li>
+            <li><a href="#explore" class="nav-link px-4 py-2 mx-2 rounded-lg transition-colors duration-200 hover:bg-primary-purple hover:text-white">Explore Snippets</a></li>
+            <li><a href="#upload" class="nav-link px-4 py-2 mx-2 rounded-lg transition-colors duration-200 hover:bg-primary-purple hover:text-white">Upload Code</a></li>
+            <li><a href="#guides" class="nav-link px-4 py-2 mx-2 rounded-lg transition-colors duration-200 hover:bg-primary-purple hover:text-white">Guides</a></li>
+            <li><a href="#teams" class="nav-link px-4 py-2 mx-2 rounded-lg transition-colors duration-200 hover:bg-primary-purple hover:text-white">Teams</a></li>
+            <li><a href="#login" class="nav-link px-4 py-2 mx-2 rounded-lg transition-colors duration-200 hover:bg-primary-purple hover:text-white">Login / Sign Up</a></li>
+            <li><a href="#dashboard" class="nav-link px-4 py-2 mx-2 rounded-lg transition-colors duration-200 hover:bg-primary-purple hover:text-white">Dashboard</a></li>
+        </ul>
+    </nav>
+    
+    <!-- Main Content Container -->
+    <main class="container mx-auto px-4 py-8 flex-grow">
+        
+        <!-- === HOME SECTION: HERO & TEAM === -->
+        <section id="home" class="page-section">
+            <!-- Hero section: Static dark gradient background -->
+            <div id="hero-section" class="hero relative p-16 rounded-xl shadow-xl mb-12 bg-gray-900" 
+                 style="min-height: 400px; background-image: linear-gradient(135deg, #1f2937 0%, #374151 100%);">
+                
+                <!-- Content wrapper -->
+                <div id="hero-content" class="relative z-10 text-white">
+                    <h2 class="text-3xl md:text-5xl font-extrabold mb-4 tracking-tight text-center">Elevate Your Coding Skills with Collaborative Mentorship</h2>
+                    <p class="text-lg md:text-xl font-light mb-8 max-w-2xl mx-auto text-center">Share clean code, access expert guides, and build projects together.</p>
+                    <div class="flex flex-col sm:flex-row justify-center gap-4">
+                        <button onclick="routeTo('explore'); showNotification('Exploring snippets...', 'info')" class="px-8 py-3 bg-secondary-purple hover:bg-violet-600 text-white font-semibold rounded-full shadow-lg transition duration-300 transform hover:scale-105">
+                            Discover Snippets
+                        </button>
+                        <button onclick="routeTo('upload'); showNotification('Ready to share your code!', 'success')" class="px-8 py-3 bg-white text-primary-purple hover:bg-gray-200 font-semibold rounded-full shadow-lg transition duration-300 transform hover:scale-105">
+                            Upload Code
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Teams Section (Visible on Home) -->
+            <div class="teams text-center mb-8 p-6 bg-gray-800 rounded-xl shadow-lg">
+                <h2 class="text-3xl font-semibold text-primary-purple mb-8 border-b border-gray-700 pb-4 text-white">Our Core Development Team</h2>
+                <div class="grid grid-cols-2 md:grid-cols-5 gap-6">
+                    <!-- Team Member Card Structure (Refined) -->
+                    <div class="team-member p-4 bg-gray-700 rounded-lg transition duration-300 hover:shadow-xl hover:scale-[1.02]">
+                        <img src="https://placehold.co/80x80/6366f1/ffffff?text=AJ" alt="Avtar Jassal" class="w-20 h-20 rounded-full mx-auto mb-3 object-cover shadow-md">
+                        <h3 class="text-lg font-semibold text-gray-200">Avtar Jassal</h3>
+                        <p class="text-sm text-gray-400">Team Lead</p>
+                    </div>
+                    <!-- SHREYA MUTKULE (SM): Initials are now white (ffffff) -->
+                    <div class="team-member p-4 bg-gray-700 rounded-lg transition duration-300 hover:shadow-xl hover:scale-[1.02]">
+                        <img src="https://placehold.co/80x80/facc15/ffffff?text=SM" alt="Shreya Mutkule" class="w-20 h-20 rounded-full mx-auto mb-3 object-cover shadow-md">
+                        <h3 class="text-lg font-semibold text-gray-200">Shreya Mutkule</h3>
+                        <p class="text-sm text-gray-400">Developer</p>
+                    </div>
+                    <!-- VAISHNAVI GADE (VG) is Pink -->
+                    <div class="team-member p-4 bg-gray-700 rounded-lg transition duration-300 hover:shadow-xl hover:scale-[1.02]">
+                        <img src="https://placehold.co/80x80/ec4899/ffffff?text=VG" alt="Vaishnavi Gade" class="w-20 h-20 rounded-full mx-auto mb-3 object-cover shadow-md">
+                        <h3 class="text-lg font-semibold text-gray-200">Vaishnavi Gade</h3>
+                        <p class="text-sm text-gray-400">Designer</p>
+                    </div>
+                    <div class="team-member p-4 bg-gray-700 rounded-lg transition duration-300 hover:shadow-xl hover:scale-[1.02]">
+                        <img src="https://placehold.co/80x80/10b981/ffffff?text=KB" alt="Karan Bankar" class="w-20 h-20 rounded-full mx-auto mb-3 object-cover shadow-md">
+                        <h3 class="text-lg font-semibold text-gray-200">Karan Bankar</h3>
+                        <p class="text-sm text-gray-400">Backend Engineer</p>
+                    </div>
+                    <!-- OM BHOSALE (OB) is Red -->
+                    <div class="team-member p-4 bg-gray-700 rounded-lg transition duration-300 hover:shadow-xl hover:scale-[1.02]">
+                        <img src="https://placehold.co/80x80/ef4444/ffffff?text=OB" alt="Om Bhosale" class="w-20 h-20 rounded-full mx-auto mb-3 object-cover shadow-md">
+                        <h3 class="text-lg font-semibold text-gray-200">Om Bhosale</h3>
+                        <p class="text-sm text-gray-400">Frontend Engineer</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+        
+        <!-- === EXPLORE SNIPPETS SECTION (UPDATED with Tooltip) === -->
+        <section id="explore" class="page-section hidden p-6 bg-gray-800 rounded-xl shadow-lg text-gray-200">
+            <h2 class="text-3xl font-semibold text-primary-purple mb-6">Explore Code Snippets</h2>
+            <p class="text-gray-400 mb-6">Discover a curated collection of public code snippets. Use filters and search to find exactly what you need.</p>
+            
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <!-- Snippet Card 1 (with Tooltip) -->
+                <div class="p-5 border border-gray-700 rounded-lg bg-gray-900 transition hover:shadow-md">
+                    <h3 class="text-xl font-bold text-gray-100">Python Binary Search</h3>
+                    <div class="relative tooltip-container inline-block">
+                        <p class="text-sm text-secondary-purple mt-1 mb-3 cursor-pointer">Language: Python | Tags: #algorithm, #beginner</p>
+                        <div class="tooltip-content absolute z-10 p-2 text-xs text-white bg-gray-700 rounded-lg shadow-lg -mt-1 w-40">
+                            Tags help filter complex snippets and difficulty levels.
+                        </div>
+                    </div>
+                    <p class="text-gray-400">A clean, efficient implementation of the binary search algorithm for sorted lists.</p>
+                    <button class="mt-3 text-sm text-white bg-primary-purple px-4 py-1.5 rounded-full hover:bg-indigo-700 transition">View Code</button>
+                </div>
+                <!-- Snippet Card 2 (with Tooltip) -->
+                <div class="p-5 border border-gray-700 rounded-lg bg-gray-900 transition hover:shadow-md">
+                    <h3 class="text-xl font-bold text-gray-100">JS Debounce Function</h3>
+                    <div class="relative tooltip-container inline-block">
+                        <p class="text-sm text-secondary-purple mt-1 mb-3 cursor-pointer">Language: JavaScript | Tags: #frontend, #utility</p>
+                        <div class="tooltip-content absolute z-10 p-2 text-xs text-white bg-gray-700 rounded-lg shadow-lg -mt-1 w-40">
+                            Tags help filter complex snippets and difficulty levels.
+                        </div>
+                    </div>
+                    <p class="text-gray-400">A utility function to limit the rate at which a function fires, improving performance.</p>
+                    <button class="mt-3 text-sm text-white bg-primary-purple px-4 py-1.5 rounded-full hover:bg-indigo-700 transition">View Code</button>
+                </div>
+                <!-- Snippet Card 3 (with Tooltip) -->
+                <div class="p-5 border border-gray-700 rounded-lg bg-gray-900 transition hover:shadow-md">
+                    <h3 class="text-xl font-bold text-gray-100">C++ Linked List Node</h3>
+                    <div class="relative tooltip-container inline-block">
+                        <p class="text-sm text-secondary-purple mt-1 mb-3 cursor-pointer">Language: C++ | Tags: #data-structure, #advanced</p>
+                        <div class="tooltip-content absolute z-10 p-2 text-xs text-white bg-gray-700 rounded-lg shadow-lg -mt-1 w-40">
+                            Tags help filter complex snippets and difficulty levels.
+                        </div>
+                    </div>
+                    <p class="text-gray-400">The fundamental structure for a singly linked list in modern C++.</p>
+                    <button class="mt-3 text-sm text-white bg-primary-purple px-4 py-1.5 rounded-full hover:bg-indigo-700 transition">View Code</button>
+                </div>
+            </div>
+        </section>
+        
+        <!-- === UPLOAD SNIPPET SECTION (UPDATED WITH GEMINI) === -->
+        <section id="upload" class="page-section hidden p-6 bg-gray-800 rounded-xl shadow-lg">
+            <h2 class="text-3xl font-semibold text-primary-purple text-center mb-6 text-white">Contribute Your Code Snippet</h2>
+            <form class="space-y-4 max-w-xl mx-auto p-6 border border-gray-700 rounded-lg bg-gray-900">
+                <div>
+                    <label for="title" class="block text-sm font-medium text-gray-300 mb-1">Title</label>
+                    <input type="text" id="title" class="w-full p-2 border border-gray-600 rounded-md focus:ring-primary-purple focus:border-primary-purple bg-gray-700 text-white" placeholder="e.g., Efficient Array Flattening in JS">
+                </div>
+
+                <div>
+                    <label for="code" class="block text-sm font-medium text-gray-300 mb-1">Code Snippet (with comments)</label>
+                    <textarea id="code" rows="10" class="w-full p-2 border border-gray-600 rounded-md focus:ring-primary-purple focus:border-primary-purple bg-gray-700 text-white" placeholder="Paste your complete code here..."></textarea>
+                </div>
+                
+                <div>
+                    <label for="annotation" class="block text-sm font-medium text-gray-300 mb-1">Detailed Explanation / Context</label>
+                    <textarea id="annotation" rows="4" class="w-full p-2 border border-gray-600 rounded-md focus:ring-primary-purple focus:border-primary-purple bg-gray-700 text-white" placeholder="Explain what the code does, why it's useful, and any requirements."></textarea>
+                </div>
+                
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                        <label for="language" class="block text-sm font-medium text-gray-300 mb-1">Language</label>
+                        <select id="language" class="w-full p-2 border border-gray-600 rounded-md focus:ring-primary-purple focus:border-primary-purple bg-gray-700 text-white">
+                            <option value="">Select Language</option>
+                            <option>Python</option>
+                            <option>JavaScript</option>
+                            <option>C++</option>
+                            <option>Java</option>
+                            <option>Ruby</option>
+                            <option>Go</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="tags" class="block text-sm font-medium text-gray-300 mb-1">Tags (comma-separated)</label>
+                        <input type="text" id="tags" class="w-full p-2 border border-gray-600 rounded-md focus:ring-primary-purple focus:border-primary-purple bg-gray-700 text-white" placeholder="e.g., functional, testing, react">
+                    </div>
+                </div>
+                
+                <!-- NEW GEMINI FEATURE BUTTON -->
+                <button type="button" onclick="generateCodeReview(event)" 
+                    class="w-full py-3 bg-secondary-purple hover:bg-violet-600 text-white font-semibold rounded-md shadow-lg transition duration-300">
+                    ✨ Get Mentor Review & Refactoring Suggestions
+                </button>
+
+                <!-- REVIEW OUTPUT AREA -->
+                <div id="review-output" class="hidden p-4 bg-indigo-900 border-l-4 border-secondary-purple rounded-lg transition duration-300 ease-in-out">
+                    <h3 class="text-lg font-semibold text-secondary-purple mb-2">Mentor Feedback:</h3>
+                    <div id="review-content" class="text-sm text-gray-200 whitespace-pre-wrap"></div>
+                </div>
+                
+                <button type="submit" onclick="submitSnippet(event)" class="w-full py-3 bg-success-green hover:bg-emerald-600 text-white font-semibold rounded-md shadow-lg transition duration-300">
+                    Submit Snippet
+                </button>
+            </form>
+        </section>
+
+        <!-- === GUIDES SECTION (UPDATED with Progress Bars) === -->
+        <section id="guides" class="page-section hidden p-6 bg-gray-800 rounded-xl shadow-lg text-gray-200">
+            <h2 class="text-3xl font-semibold text-primary-purple mb-6">Expert Mentor Guides</h2>
+            <p class="text-gray-400 mb-6">Access curated tutorials and advanced troubleshooting guides across various development categories.</p>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- Guide Card 1 (with Progress Bar) -->
+                <div class="p-5 border border-primary-purple border-opacity-30 rounded-lg bg-gray-900 transition hover:shadow-xl">
+                    <h3 class="text-xl font-bold text-gray-100 mb-2">Advanced Git Workflow</h3>
+                    <p class="text-gray-400">Master rebasing, cherry-picking, and collaborative pull requests for professional teams.</p>
+                    
+                    <!-- Progress Bar for Guide -->
+                    <div class="mt-4">
+                        <div class="text-xs font-semibold text-primary-purple mb-1 flex justify-between">
+                            <span>Your Progress</span>
+                            <span>40% Complete</span>
+                        </div>
+                        <div class="w-full bg-gray-700 rounded-full h-2.5">
+                            <div class="bg-primary-purple h-2.5 rounded-full" style="width: 40%"></div>
+                        </div>
+                    </div>
+                    
+                    <button class="mt-4 text-sm text-primary-purple border border-primary-purple px-4 py-1.5 rounded-full hover:bg-primary-purple hover:text-white transition">Read Guide</button>
+                </div>
+                <!-- Guide Card 2 (with Progress Bar) -->
+                <div class="p-5 border border-primary-purple border-opacity-30 rounded-lg bg-gray-900 transition hover:shadow-xl">
+                    <h3 class="text-xl font-bold text-gray-100 mb-2">Performance Debugging Techniques</h3>
+                    <p class="text-gray-400">In-depth tutorial on profiling Python and Node.js applications for bottlenecks.</p>
+                    
+                    <!-- Progress Bar for Guide -->
+                    <div class="mt-4">
+                        <div class="text-xs font-semibold text-secondary-purple mb-1 flex justify-between">
+                            <span>Your Progress</span>
+                            <span>80% Complete</span>
+                        </div>
+                        <div class="w-full bg-gray-700 rounded-full h-2.5">
+                            <div class="bg-secondary-purple h-2.5 rounded-full" style="width: 80%"></div>
+                        </div>
+                    </div>
+
+                    <button class="mt-4 text-sm text-primary-purple border border-primary-purple px-4 py-1.5 rounded-full hover:bg-primary-purple hover:text-white transition">Read Guide</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- === TEAMS PAGE SECTION (UPDATED with Join Input) === -->
+        <section id="teams" class="page-section hidden p-6 bg-gray-800 rounded-xl shadow-lg">
+            <h2 class="text-3xl font-semibold text-primary-purple text-center mb-6 text-white">Collaborative Workspaces (Teams)</h2>
+            <div class="max-w-3xl mx-auto space-y-4">
+                <p class="text-gray-400 text-center">Join or create teams to collaborate on projects, share private snippets, and chat with peers in real-time. Team data is stored securely in Firestore.</p>
+                
+                <div class="text-center bg-gray-900 p-4 rounded-lg border border-gray-700">
+                    <p class="font-medium text-gray-200">Team Collaboration Status:</p>
+                    <!-- IMPORTANT: Displaying the full userId is mandatory for multi-user apps -->
+                    <p id="current-user-id" class="text-sm font-mono text-secondary-purple break-all mt-1">Loading User ID...</p>
+                    <p class="text-xs text-gray-500 mt-2">Share this ID with teammates to connect.</p>
+                </div>
+
+                <!-- Input for Joining Team (New) -->
+                <div class="pt-4">
+                    <label for="team-id-input" class="block text-sm font-medium text-gray-300 mb-2 text-center">Enter Team ID to Join</label>
+                    <div class="flex gap-2">
+                        <input type="text" id="team-id-input" placeholder="Paste 32-character Team ID here" class="flex-grow p-3 border border-gray-600 rounded-lg focus:ring-secondary-purple focus:border-secondary-purple bg-gray-700 text-white placeholder-gray-500">
+                        <button onclick="showNotification('Attempting to join team...', 'info')" class="px-6 py-3 bg-secondary-purple hover:bg-violet-600 text-white font-semibold rounded-lg shadow-md transition whitespace-nowrap">
+                            Join Team
+                        </button>
+                    </div>
+                </div>
+
+                <div class="flex flex-col sm:flex-row justify-center gap-4 pt-4">
+                    <button class="px-6 py-3 bg-success-green hover:bg-emerald-600 text-white font-semibold rounded-lg shadow-md transition">Create New Team</button>
+                </div>
+            </div>
+        </section>
+        
+        <!-- === LOGIN / SIGNUP SECTION === -->
+        <section id="login" class="page-section hidden p-6 bg-gray-800 rounded-xl shadow-lg">
+            <div class="max-w-sm mx-auto p-8 border border-gray-700 rounded-xl shadow-lg bg-gray-900">
+                <!-- Login Form -->
+                <div id="loginForm">
+                    <h2 class="text-2xl font-bold text-primary-purple text-center mb-6">Secure Login</h2>
+                    <form class="space-y-4">
+                        <div>
+                            <label for="email" class="block text-sm font-medium text-gray-300 mb-1">Email Address</label>
+                            <input type="email" id="email" required placeholder="name@company.com" class="w-full p-3 border border-gray-600 rounded-lg focus:ring-primary-purple focus:border-primary-purple bg-gray-700 text-white">
+                        </div>
+                        <div>
+                            <label for="password" class="block text-sm font-medium text-gray-300 mb-1">Password</label>
+                            <input type="password" id="password" required placeholder="••••••••" class="w-full p-3 border border-gray-600 rounded-lg focus:ring-primary-purple focus:border-primary-purple bg-gray-700 text-white">
+                        </div>
+                        <button type="submit" onclick="showNotification('Attempting to log in...', 'info'); event.preventDefault();" class="w-full py-3 bg-primary-purple hover:bg-indigo-700 text-white font-semibold rounded-lg transition duration-300">
+                            Log In
+                        </button>
+                    </form>
+                    <div class="text-center mt-4">
+                        <a href="#" id="toggleToSignup" class="text-sm text-secondary-purple hover:text-violet-400 font-medium transition">Don't have an account? Sign Up</a>
+                    </div>
+                </div>
+                
+                <!-- Sign Up Form (Hidden by default) -->
+                <div id="signupForm" class="hidden">
+                    <h2 class="text-2xl font-bold text-primary-purple text-center mb-6">Create Account</h2>
+                    <form class="space-y-4">
+                        <div>
+                            <label for="signupEmail" class="block text-sm font-medium text-gray-300 mb-1">Email Address</label>
+                            <input type="email" id="signupEmail" required placeholder="name@company.com" class="w-full p-3 border border-gray-600 rounded-lg focus:ring-primary-purple focus:border-primary-purple bg-gray-700 text-white">
+                        </div>
+                        <div>
+                            <label for="signupPassword" class="block text-sm font-medium text-gray-300 mb-1">Password</label>
+                            <input type="password" id="signupPassword" required placeholder="Create a password (min 6 chars)" class="w-full p-3 border border-gray-600 rounded-lg focus:ring-primary-purple focus:border-primary-purple bg-gray-700 text-white">
+                        </div>
+                        <div>
+                            <label for="confirmPassword" class="block text-sm font-medium text-gray-300 mb-1">Confirm Password</label>
+                            <input type="password" id="confirmPassword" required placeholder="Confirm your password" class="w-full p-3 border border-gray-600 rounded-lg focus:ring-primary-purple focus:border-primary-purple bg-gray-700 text-white">
+                        </div>
+                        <button type="submit" onclick="showNotification('Account creation triggered!', 'info'); event.preventDefault();" class="w-full py-3 bg-success-green hover:bg-emerald-600 text-white font-semibold rounded-lg transition duration-300">
+                            Sign Up
+                        </button>
+                    </form>
+                    <div class="text-center mt-4">
+                        <a href="#" id="toggleToLogin" class="text-sm text-secondary-purple hover:text-violet-400 font-medium transition">Already have an account? Login</a>
+                    </div>
+                </div>
+            </div>
+        </section>
+        
+        <!-- === DASHBOARD SECTION === -->
+        <section id="dashboard" class="page-section hidden p-6 bg-gray-800 rounded-xl shadow-lg text-gray-200">
+            <h2 class="text-3xl font-semibold text-primary-purple mb-6">User Dashboard</h2>
+            <div class="space-y-6">
+                <div class="p-4 border-l-4 border-primary-purple bg-gray-900 rounded-lg">
+                    <h3 class="text-xl font-semibold text-gray-100">My Snippets</h3>
+                    <p class="text-gray-400 mt-1">View and manage all the code snippets you have contributed.</p>
+                </div>
+                <div class="p-4 border-l-4 border-secondary-purple bg-gray-900 rounded-lg">
+                    <h3 class="text-xl font-semibold text-gray-100">Bookmarked Guides</h3>
+                    <p class="text-gray-400 mt-1">Quick access to all your saved mentor guides and tutorials.</p>
+                </div>
+                <div class="p-4 border-l-4 border-success-green bg-gray-900 rounded-lg">
+                    <h3 class="text-xl font-semibold text-gray-100">Account Settings</h3>
+                    <p class="text-gray-400 mt-1">Update your profile information, password, and preferences.</p>
+                </div>
+            </div>
+        </section>
+
+    </main>
+    
+    <!-- Footer -->
+    <footer class="bg-gray-800 text-white text-center p-6 mt-10">
+        <p class="text-sm">&copy; 2025 CodeMentor Hub. Empowering Developers Worldwide.</p>
+        <p class="text-xs mt-1 text-gray-400">Built with professionalism and collaboration in mind.</p>
+    </footer>
+    
+    <script>
+        // === Custom Notification System (Replaces alert()) ===
+        function showNotification(message, type = 'info', duration = 3000) {
+            const container = document.getElementById('notification-container');
+            const color = type === 'success' ? 'bg-success-green' : (type === 'error' ? 'bg-red-500' : 'bg-primary-purple');
+            const icon = type === 'success' ? '✔' : (type === 'error' ? '✖' : 'ℹ');
+
+            const notification = document.createElement('div');
+            notification.className = `${color} text-white px-4 py-3 rounded-xl shadow-xl flex items-center space-x-3 opacity-0 transition-opacity duration-300 ease-out transform translate-x-10`;
+            notification.innerHTML = `
+                <span class="text-lg font-bold">${icon}</span>
+                <span class="text-sm font-medium">${message}</span>
+            `;
+
+            container.appendChild(notification);
+
+            // Animate in
+            setTimeout(() => {
+                notification.classList.remove('opacity-0', 'translate-x-10');
+                notification.classList.add('opacity-100', 'translate-x-0');
+            }, 10);
+
+            // Animate out and remove after duration
+            setTimeout(() => {
+                notification.classList.remove('opacity-100', 'translate-x-0');
+                notification.classList.add('opacity-0', 'translate-x-10');
+                
+                // Remove element after transition finishes (300ms)
+                setTimeout(() => {
+                    notification.remove();
+                }, 300);
+            }, duration);
+        }
+
+        // === API Utility Function (Mandatory for robustness) ===
+        async function fetchWithExponentialBackoff(apiUrl, payload, retries = 5, delay = 1000) {
+            for (let i = 0; i < retries; i++) {
+                try {
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (response.status === 429 && i < retries - 1) {
+                        // Too many requests, retry
+                        console.warn(`Rate limit hit, retrying in ${delay}ms...`);
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                        delay *= 2; // Exponential backoff
+                        continue;
+                    }
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+
+                    return await response.json();
+                } catch (error) {
+                    if (i === retries - 1) {
+                        throw error; // Throw on final failure
+                    }
+                    // Wait before retrying
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                    delay *= 2;
+                }
+            }
+        }
+
+        // === GEMINI INTEGRATION: Code Reviewer ===
+        async function generateCodeReview(event) {
+            event.preventDefault();
+            
+            const title = document.getElementById('title').value;
+            const code = document.getElementById('code').value;
+            const annotation = document.getElementById('annotation').value;
+            const language = document.getElementById('language').value;
+            
+            const reviewOutputDiv = document.getElementById('review-output');
+            const reviewContentDiv = document.getElementById('review-content');
+
+            if (!code || !language) {
+                reviewOutputDiv.classList.remove('animate-pulse');
+                reviewContentDiv.textContent = '';
+                reviewOutputDiv.classList.add('hidden');
+                showNotification('Please provide both the Code Snippet and select a Language.', 'error');
+                return;
+            }
+
+            // Show loading state
+            reviewOutputDiv.classList.remove('hidden');
+            reviewOutputDiv.classList.add('animate-pulse');
+            reviewContentDiv.innerHTML = '<span class="font-bold">Analyzing...</span> The Gemini mentor is reviewing your code structure and suggesting improvements.';
+            showNotification('Generating expert review...', 'info', 5000);
+
+            const systemPrompt = `You are an expert Senior Software Engineer and Code Mentor. Your task is to provide a concise, professional, and actionable code review. 
+                                  Focus on best practices, efficiency, and common pitfalls for the specified language. Format your output clearly using markdown.
+                                  Keep the total response under 150 words.`;
+                                  
+            const userQuery = `Review the following ${language} snippet titled "${title}" with the following context: 
+                               Context: "${annotation || 'No specific context provided.'}"
+
+                               Code:
+                               \`\`\`${language.toLowerCase()}
+                               ${code}
+                               \`\`\`
+
+                               Provide a quick summary, 1-2 key improvement points (with brief explanation), and a positive closing statement.`;
+
+            const apiKey = ""; // Canvas will provide this key at runtime
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+
+            const payload = {
+                contents: [{ parts: [{ text: userQuery }] }],
+                systemInstruction: { parts: [{ text: systemPrompt }] },
+            };
+
+            try {
+                const result = await fetchWithExponentialBackoff(apiUrl, payload);
+                const generatedText = result.candidates?.[0]?.content?.parts?.[0]?.text || "Error: Could not retrieve review.";
+                
+                // Use innerHTML to respect markdown formatting from the LLM
+                reviewContentDiv.innerHTML = generatedText.replace(/\n/g, '<br>'); 
+                showNotification('Code review completed!', 'success');
+
+            } catch (error) {
+                console.error("Gemini API Error:", error);
+                reviewContentDiv.textContent = 'Failed to generate review. Please check the console for API errors.';
+                showNotification('Review failed due to an API error.', 'error', 5000);
+            } finally {
+                reviewOutputDiv.classList.remove('animate-pulse');
+            }
+        }
+        
+        // Placeholder for actual snippet submission
+        function submitSnippet(event) {
+            event.preventDefault();
+            // In a real app, this would save the snippet (and perhaps the review content) to Firestore.
+            showNotification('Snippet submitted successfully!', 'success');
+        }
+
+        // === Navigation/Routing Logic ===
+        const allSections = document.querySelectorAll('.page-section');
+        const navLinks = document.querySelectorAll('.nav-link');
+
+        function routeTo(targetId) {
+            // Hide all sections
+            allSections.forEach(section => {
+                section.classList.add('hidden');
+            });
+
+            // Show the target section
+            const targetSection = document.getElementById(targetId);
+            if (targetSection) {
+                targetSection.classList.remove('hidden');
+            }
+
+            // The home section includes both the hero and teams component
+            if (targetId === 'home') {
+                document.getElementById('home').classList.remove('hidden');
+            }
+
+            // Update active link styling
+            navLinks.forEach(link => {
+                link.classList.remove('bg-primary-purple', 'text-white');
+                link.classList.add('text-gray-300');
+                
+                if (link.getAttribute('href').substring(1) === targetId) {
+                    link.classList.add('bg-primary-purple', 'text-white');
+                    link.classList.remove('text-gray-300');
+                }
+            });
+
+            // Scroll to top
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        // Main logic to run after Firebase/Auth is initialized
+        window.initializeAppLogic = () => {
+            // Set the initial route
+            routeTo('home'); 
+            
+            // Attach Nav Listeners
+            navLinks.forEach(link => {
+                link.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    const targetId = link.getAttribute('href').substring(1);
+                    routeTo(targetId);
+                });
+            });
+        }
+
+        // === Login/Signup Toggle Logic ===
+        const loginFormContainer = document.getElementById('loginForm');
+        const signupFormContainer = document.getElementById('signupForm');
+        const toggleToSignup = document.getElementById('toggleToSignup');
+        const toggleToLogin = document.getElementById('toggleToLogin');
+
+        toggleToSignup.addEventListener('click', (e) => {
+            e.preventDefault();
+            loginFormContainer.classList.add('hidden');
+            signupFormContainer.classList.remove('hidden');
+        });
+        
+        toggleToLogin.addEventListener('click', (e) => {
+            e.preventDefault();
+            signupFormContainer.classList.add('hidden');
+            loginFormContainer.classList.remove('hidden');
+        });
+        
+    </script>
+</body>
+</html>
